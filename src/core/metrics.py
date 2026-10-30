@@ -18,6 +18,12 @@ eval_score_histogram = _meter.create_histogram("niyantran.eval.score")
 drift_score_histogram = _meter.create_histogram("niyantran.drift.score")
 cost_anomaly_counter = _meter.create_counter("niyantran.cost.anomaly.total")
 slo_breach_counter = _meter.create_counter("niyantran.slo.breach.total")
+# --- Seema capacity governor (M6/M7) ---
+seema_request_count_histogram = _meter.create_histogram("niyantran.seema.request_count")
+seema_request_limit_histogram = _meter.create_histogram("niyantran.seema.request_limit")
+seema_headroom_histogram = _meter.create_histogram("niyantran.seema.capacity_headroom_pct")
+seema_active_counter = _meter.create_counter("niyantran.seema.active.total")
+seema_decision_counter = _meter.create_counter("niyantran.seema.decision.total")
 
 
 def record_investigation_turn(model: str, duration_ms: float, cost_usd: float,
@@ -43,3 +49,15 @@ def record_cost_anomaly() -> None:
 
 def record_slo_breach(slo_name: str) -> None:
     slo_breach_counter.add(1, {"slo": slo_name})
+
+
+def record_seema_state(request_count: int, request_limit: int, headroom_pct: float, active: bool) -> None:
+    seema_request_count_histogram.record(request_count)
+    seema_request_limit_histogram.record(request_limit)
+    seema_headroom_histogram.record(headroom_pct)
+    if active:
+        seema_active_counter.add(1)
+
+
+def record_seema_decision(action: str, reason: str) -> None:
+    seema_decision_counter.add(1, {"action": action, "reason": reason})

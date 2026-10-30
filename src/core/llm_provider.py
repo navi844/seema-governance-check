@@ -23,7 +23,11 @@ from src.core.genai_conventions import (
     GEN_AI_RESPONSE_MODEL, GEN_AI_RESPONSE_FINISH_REASONS,
     GEN_AI_USAGE_INPUT_TOKENS, GEN_AI_USAGE_OUTPUT_TOKENS,
     NIYANTRAN_COST_USD, NIYANTRAN_ROUTING_TIER, NIYANTRAN_ROUTING_REASON,
-    NIYANTRAN_CACHE_HIT, safe_prompt_attribute,
+    NIYANTRAN_CACHE_HIT, NIYANTRAN_SEEMA_ACTIVE, NIYANTRAN_SEEMA_ACTION,
+    NIYANTRAN_SEEMA_TRIGGER_REASONS, NIYANTRAN_SEEMA_REQUEST_COUNT,
+    NIYANTRAN_SEEMA_REQUEST_LIMIT, NIYANTRAN_SEEMA_CAPACITY_HEADROOM_PCT,
+    NIYANTRAN_SEEMA_ORIGINAL_TIER, NIYANTRAN_SEEMA_EFFECTIVE_TIER,
+    safe_prompt_attribute,
 )
 from src.core.pricing import estimate_cost_usd
 from src.core.routing import route_request
@@ -70,7 +74,9 @@ class ModelCallResult:
 
 def chat_raw(messages: list[dict], tools: Optional[list] = None,
              task_kind: str = "tool_loop", complexity_hint: str = "normal",
-             allow_cache: bool = False, temperature: Optional[float] = None) -> ModelCallResult:
+             allow_cache: bool = False, temperature: Optional[float] = None,
+             request_type: Optional[str] = None, priority: Optional[str] = None,
+             governor=None) -> ModelCallResult:
     """
     allow_cache: only pass True for cacheable, tool-free single-turn calls
     (e.g. raw_call_demo-style lookups). The main tool loop and sub-agent
@@ -79,7 +85,8 @@ def chat_raw(messages: list[dict], tools: Optional[list] = None,
     tracer = get_tracer("niyantran.model")
     client = _get_client()
 
-    decision = route_request(task_kind, complexity_hint)
+    decision = route_request(task_kind, complexity_hint, request_type=request_type,
+                            priority=priority, governor=governor)
 
     with tracer.start_as_current_span("model_call") as span:
         span.set_attribute(GEN_AI_SYSTEM, "openai")
@@ -87,6 +94,14 @@ def chat_raw(messages: list[dict], tools: Optional[list] = None,
         span.set_attribute(GEN_AI_REQUEST_MODEL, decision.model)
         span.set_attribute(NIYANTRAN_ROUTING_TIER, decision.tier)
         span.set_attribute(NIYANTRAN_ROUTING_REASON, decision.reason)
+        span.set_attribute(NIYANTRAN_SEEMA_ACTIVE, decision.governor_active)
+        span.set_attribute(NIYANTRAN_SEEMA_ACTION, decision.governor_action)
+        span.set_attribute(NIYANTRAN_SEEMA_TRIGGER_REASONS, decision.governor_reasons)
+        span.set_attribute(NIYANTRAN_SEEMA_REQUEST_COUNT, decision.governor_request_count)
+        span.set_attribute(NIYANTRAN_SEEMA_REQUEST_LIMIT, decision.governor_request_limit)
+        span.set_attribute(NIYANTRAN_SEEMA_CAPACITY_HEADROOM_PCT, decision.capacity_headroom_pct)
+        span.set_attribute(NIYANTRAN_SEEMA_ORIGINAL_TIER, "light")
+        span.set_attribute(NIYANTRAN_SEEMA_EFFECTIVE_TIER, decision.tier)
         if messages:
             last_user = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")
             span.set_attribute("gen_ai.prompt.last_user_message", safe_prompt_attribute(last_user))

@@ -4,6 +4,7 @@ from fastapi import FastAPI, HTTPException
 
 from src.core.agent_loop import run_investigation, answer_faq
 from src.core import cost_attribution, cost_anomaly, slo, alerting, feedback, online_eval, drift, incident_response
+from src.core.seema import reset as reset_seema
 from src.data.mock_store import CUSTOMERS
 
 app = FastAPI(title="Niyantran — Cost, Capacity & SLO-Driven Operations for the Fraud/AML Agent")
@@ -104,3 +105,23 @@ def submit_feedback(investigation_id: str, rating: str, note: str = ""):
 @app.get("/annotation-queue")
 def annotation_queue():
     return {"queue": feedback.annotation_queue()}
+
+
+@app.post("/admin/reset")
+def reset_runtime_state():
+    """Admin reset for in-memory capacity/SLO state during live validation."""
+    slo.reset()
+    cost_anomaly.reset()
+    cost_attribution.reset_rollup()
+    alerting.clear_alerts()
+    reset_seema()
+    return {
+        "reset": True,
+        "cleared": [
+            "slo",
+            "cost_anomaly",
+            "cost_attribution",
+            "alerts",
+            "seema",
+        ],
+    }

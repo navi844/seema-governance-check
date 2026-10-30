@@ -1,6 +1,6 @@
 """
 Deterministic tests for Module 6/7 logic — no OPENAI_API_KEY required,
-since none of this touches llm_provider.py, online_eval.py or drift.py
+since none of this touches llm_provider.py, online
 (those need a live API). Run with: pytest tests/unit -v
 """
 
@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.core import cost_attribution, cost_anomaly, slo, incident_response, routing
 from src.core.caching import normalize_question, cache_key
+from src.core.seema import SeemaGovernor
 
 
 def test_cost_attribution_rolls_up_by_feature():
@@ -96,3 +97,27 @@ def test_cache_key_differs_by_model():
     k1 = cache_key("gpt-4o-mini", "same question")
     k2 = cache_key("gpt-4o", "same question")
     assert k1 != k2
+
+
+def test_seema_trips_on_request_rate_limit():
+    slo.reset()
+    clock = [0.0]
+    governor = SeemaGovernor(request_limit=2, window_seconds=10, clock=lambda: clock[0])
+    for _ in range(2):
+        decision = governor.record_incoming_request(request_type="faq", priority="low", original_tier="light")
+        assert decision.active is False
+    decision = governor.record_incoming_request(request_type="faq", priority="low", original_tier="light")
+    assert decision.active is True
+    assert decision.reasons == ["request_rate_exceeded"]
+    assert decision.effective_tier == "light"
+
+
+def test_seema_trips_on_slo_failure():
+    clock = [0.0]
+    governor = SeemaGovernor(request_limit=20, window_seconds=10, clock=lambda: clock[0])
+    slo.reset()
+    slo.record_outcome("answer_quality", met=False)
+    decision = governor.evaluate_state(request_type="investigation", priority="normal", original_tier="light")
+    assert decision.active is True
+    assert "slo_breach" in decision.reasons
+    assert decision.effective_tier == "light"

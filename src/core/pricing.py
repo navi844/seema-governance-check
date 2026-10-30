@@ -6,8 +6,20 @@ PRICES_PER_MILLION_TOKENS_USD = {
 }
 
 
+def _normalize_model_name(model: str) -> str:
+    normalized = (model or "").strip().lower()
+    if not normalized:
+        return ""
+    if normalized.startswith("gpt-4o-mini"):
+        return "gpt-4o-mini"
+    if normalized.startswith("gpt-4o"):
+        return "gpt-4o"
+    return normalized
+
+
 def estimate_cost_usd(model: str, input_tokens: int, output_tokens: int = 0) -> float:
-    prices = PRICES_PER_MILLION_TOKENS_USD.get(model)
+    normalized_model = _normalize_model_name(model)
+    prices = PRICES_PER_MILLION_TOKENS_USD.get(normalized_model)
     if prices is None:
         return 0.0
     return (input_tokens * prices["input"] + output_tokens * prices["output"]) / 1_000_000

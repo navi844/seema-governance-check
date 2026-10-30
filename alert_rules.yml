@@ -63,3 +63,13 @@ groups:
         annotations:
           summary: "An SLO breach was recorded in the last hour"
           description: "Check /slo/status for current_pct vs. target_pct on each SLO, then follow docs/runbook.md."
+
+      - alert: NiyantranCapacityHeadroomBreach
+        expr: increase(niyantran_slo_breach_total{slo="capacity_headroom"}[10m]) > 0
+        for: 0m
+        labels:
+          severity: SEV1
+          team: fraud-aml-ops
+        annotations:
+          summary: "Seema capacity headroom SLO has breached"
+          description: "The capacity_headroom SLO is failing; check /slo/status and the Seema request-rate governor state."

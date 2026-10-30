@@ -15,6 +15,8 @@ from src.core.sub_agent import run_sar_drafting_subagent
 from src.core.otel_setup import get_tracer
 from src.core import metrics, cost_attribution, online_eval, slo, alerting
 from src.tools.investigation_tools import TOOL_SCHEMAS, TOOL_FUNCTIONS
+from src.core.seema import record_incoming_request
+from src.core.routing import route_request
 
 SYSTEM_PROMPT = """You are Niyantran, a fraud/AML transaction-pattern investigation
 assistant for Lloyds Financial (training scenario). Given a customer_id, use the
@@ -44,12 +46,18 @@ def answer_faq(question: str, user: str = "anonymous") -> dict:
     is the call site that actually exercises caching.py; see the
     observation questions document for why run_investigation() doesn't.
     """
+    governor = record_incoming_request(request_type="faq", priority="low", original_tier="light")
     result = chat_raw(
         messages=[
             {"role": "system", "content": FAQ_SYSTEM_PROMPT},
             {"role": "user", "content": question},
         ],
-        task_kind="tool_loop", allow_cache=True,
+        task_kind="tool_loop",
+        allow_cache=True,
+        complexity_hint="normal",
+        request_type="faq",
+        priority="low",
+        governor=governor,
     )
     cost_attribution.record_cost(TEAM_NAME, FAQ_FEATURE_NAME, user, result.cost_usd)
     metrics.record_investigation_turn(result.served_model, result.duration_ms, result.cost_usd,
@@ -66,6 +74,7 @@ def answer_faq(question: str, user: str = "anonymous") -> dict:
 def run_investigation(customer_id: str, complexity_hint: str = "normal", verbose: bool = True) -> dict:
     tracer = get_tracer("niyantran.agent_loop")
     investigation_id = str(uuid.uuid4())[:8]
+    governor = record_incoming_request(request_type="investigation", priority="normal", original_tier="light")
 
     with tracer.start_as_current_span("investigation") as parent_span:
         parent_span.set_attribute("niyantran.investigation_id", investigation_id)
@@ -82,7 +91,15 @@ def run_investigation(customer_id: str, complexity_hint: str = "normal", verbose
         total_cost = 0.0
 
         for turn in range(1, MAX_TURNS + 1):
-            result = chat_raw(messages, tools=TOOL_SCHEMAS, task_kind="tool_loop", complexity_hint=complexity_hint)
+            result = chat_raw(
+                messages,
+                tools=TOOL_SCHEMAS,
+                task_kind="tool_loop",
+                complexity_hint=complexity_hint,
+                request_type="investigation",
+                priority="normal",
+                governor=governor,
+            )
             total_cost += result.cost_usd
             cost_attribution.record_cost(TEAM_NAME, FEATURE_NAME, customer_id, result.cost_usd)
             metrics.record_investigation_turn(result.served_model, result.duration_ms, result.cost_usd,

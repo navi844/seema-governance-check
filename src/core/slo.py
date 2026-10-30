@@ -14,6 +14,8 @@ measure.
 from collections import deque
 from dataclasses import dataclass, field
 
+from src.core import metrics
+
 ROLLING_WINDOW = 30
 
 SLO_DEFINITIONS = {
@@ -32,6 +34,11 @@ SLO_DEFINITIONS = {
         "target_pct": 98.0,
         "signal_source": "drift.py's observe()",
     },
+    "capacity_headroom": {
+        "description": "Incoming external request rate stays within the Seema governor limit and retains headroom",
+        "target_pct": 90.0,
+        "signal_source": "src/core/seema.py request window / governor state",
+    },
 }
 
 _windows: dict[str, deque] = {name: deque(maxlen=ROLLING_WINDOW) for name in SLO_DEFINITIONS}
@@ -44,6 +51,8 @@ def record_outcome(slo_name: str, met: bool) -> None:
     if slo_name not in _windows:
         raise ValueError(f"Unknown SLO '{slo_name}'. Known: {list(SLO_DEFINITIONS)}")
     _windows[slo_name].append(met)
+    if not met:
+        metrics.record_slo_breach(slo_name)
 
 
 def slo_status(slo_name: str) -> dict:

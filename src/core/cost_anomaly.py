@@ -11,6 +11,13 @@ baseline/rolling-window pattern used by drift.py.
 
 import os
 from collections import deque
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+from src.core import metrics
+
+load_dotenv(Path(__file__).resolve().parents[2] / ".env")
 
 BASELINE_SIZE = int(os.environ.get("NIYANTRAN_COST_BASELINE_SIZE", "15"))
 ROLLING_WINDOW = int(os.environ.get("NIYANTRAN_COST_ROLLING_WINDOW", "8"))
@@ -41,6 +48,7 @@ def observe_cost(cost_usd: float, context: str = "") -> dict:
     }
     if flagged:
         _anomalies.append({"context": context, **result})
+        metrics.record_cost_anomaly()
     return result
 
 

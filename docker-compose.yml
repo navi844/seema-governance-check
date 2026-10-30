@@ -12,7 +12,7 @@ services:
     volumes:
       - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
     ports:
-      - "14317:4317"
+      - "4317:4317"
       - "18890:8889"
     depends_on:
       - jaeger
