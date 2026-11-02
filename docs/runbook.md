@@ -58,6 +58,47 @@ Financial, training scenario) and its cost/SLO operations layer.
   trace in Jaeger. If they disagree, something upstream (a provider alias,
   a config change) is silently serving a different model than requested.
 
+### `NiyantranCapacityHeadroomBreach` / `capacity_headroom` incident (SEV1)
+- This alert means the Seema governor has seen sustained request pressure: the
+  average observed headroom over the last 10 minutes has stayed below 90% for
+  2 minutes. In code, this is the `capacity_headroom` SLO in
+  `src/core/slo.py` and the request-rate guard in `src/core/seema.py`.
+- Start with `GET /slo/status` and look for the `capacity_headroom` item.
+  Confirm:
+  - `name == "capacity_headroom"`
+  - `sample_size > 0`
+  - `current_pct < target_pct` (90)
+  - `slo_met == false`
+- The Prometheus expression is the same logic in a rolling metric view:
+  `sum(rate(niyantran_seema_capacity_headroom_pct_sum[10m])) /
+  clamp_min(sum(rate(niyantran_seema_capacity_headroom_pct_count[10m])), 1) < 90`
+  If you see this query return true in Prometheus, the system is still under
+  sustained pressure.
+- Check the live governor state in the app or logs: the default limit is
+  `SEEMA_REQUEST_LIMIT=4` with a 10-second window. A burst of too many
+  external requests arriving in the same short window is the expected cause.
+- Common triggers in this repo:
+  - a queue or batch job repeatedly calling `GET /investigate` in parallel
+  - a downstream client retry storm
+  - a large increase in real customer traffic or a misconfigured workflow
+    temporarily bypassing the normal load-shedding checks
+- If the issue is real, respond by:
+  1. confirming the pressure is external and sustained (not a single noisy
+     spike)
+  2. checking whether the governor is actively throttling requests or
+     routing them to lower tiers
+  3. reducing or pausing the source burst if it is operationally safe
+  4. escalating to the on-call owner if customer impact or compliance risk
+     is present
+- If the alert is noisy or false-positive, check for stale runtime state or a
+  missing reset. `POST /admin/reset` clears SLO and governor memory and is the
+  fastest way to confirm a fresh measurement after a manual test or a bad
+  deployment.
+- For a deeper trace, use Grafana (`:3000`) and Jaeger (`:16687`) together:
+  look for repeated `investigation` requests clustered in the same 10-second
+  interval and confirm the Seema governor is recording `request_rate_exceeded`
+  and/or `slo_breach` reasons on the same traffic pattern.
+
 ## Alert-fatigue control
 
 `incident_response.should_page()` dedupes pages for the same incident
